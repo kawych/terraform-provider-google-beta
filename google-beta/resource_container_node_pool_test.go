@@ -963,6 +963,75 @@ resource "google_container_node_pool" "np" {
 `, cluster, np)
 }
 
+func TestAccContainerNodePool_compactPlacement(t *testing.T) {
+	t.Parallel()
+
+	cluster := fmt.Sprintf("tf-test-cluster-%s", randString(t, 10))
+	np := fmt.Sprintf("tf-test-nodepool-%s", randString(t, 10))
+
+	vcrTest(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckContainerNodePoolDestroyProducer(t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccContainerNodePool_compactPlacement(cluster, np, "COMPACT"),
+			},
+			{
+				ResourceName:      "google_container_node_pool.np",
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+			{
+				Config: testAccContainerNodePool_compactPlacement(cluster, np, "TYPE_UNSPECIFIED"),
+			},
+			{
+				ResourceName:      "google_container_node_pool.np",
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+			{
+				Config:      testAccContainerNodePool_compactPlacement(cluster, np, "INVALID"),
+				ExpectError: regexp.MustCompile(`.*to be one of \[COMPACT TYPE_UNSPECIFIED\].*`),
+			},
+		},
+	})
+}
+
+func testAccContainerNodePool_compactPlacement(cluster, np, placementType string) string {
+	return fmt.Sprintf(`
+resource "google_container_cluster" "cluster" {
+  name               = "%s"
+  location           = "us-central1-a"
+  min_master_version = "1.19"
+
+  node_pool {
+    node_config {
+      machine_type = "c2-standard-4"
+    }
+
+    placement_policy {
+      type = "%s"
+    }
+  }
+}
+
+resource "google_container_node_pool" "np" {
+  name               = "%s"
+  location           = "us-central1-a"
+  cluster            = google_container_cluster.cluster.name
+
+  node_config {
+    machine_type = "c2-standard-4"
+  }
+
+  placement_policy {
+    type = "%s"
+  }
+}
+`, cluster, placementType, np, placementType)
+}
+
 func testAccCheckContainerNodePoolDestroyProducer(t *testing.T) func(s *terraform.State) error {
 	return func(s *terraform.State) error {
 		config := googleProviderConfig(t)
